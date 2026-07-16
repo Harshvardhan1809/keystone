@@ -221,8 +221,63 @@ int pmp_set_global(int region_idx, uint8_t perm)
   return SBI_ERR_SM_PMP_SUCCESS;
 }
 
+// static void debug_dump_pmp(const char *event)
+// {
+//   uintptr_t hartid;
+//   uintptr_t cfg0;
+//   uintptr_t cfg2;
+//   uintptr_t addr[16];
+
+//   asm volatile("csrr %0, mhartid" : "=r"(hartid));
+//   asm volatile("csrr %0, pmpcfg0" : "=r"(cfg0));
+//   asm volatile("csrr %0, pmpcfg2" : "=r"(cfg2));
+
+//   // changing the CSR value a little
+//   // uintptr_t pmpaddr0 = 0x1111;
+//   // uintptr_t pmpaddr1 = 0x2222;
+//   // uintptr_t pmpaddr2 = 0x3333;
+//   // uintptr_t pmpcfg0  = 0x001F181B;
+
+//   // asm volatile("csrw pmpaddr0, %0" :: "r"(pmpaddr0)); 
+//   // asm volatile("csrw pmpaddr1, %0" :: "r"(pmpaddr1)); 
+//   // asm volatile("csrw pmpaddr2, %0" :: "r"(pmpaddr2)); 
+//   // asm volatile("csrw pmpcfg0, %0" :: "r"(pmpcfg0)); 
+
+//   asm volatile("csrr %0, pmpaddr0"  : "=r"(addr[0]));
+//   asm volatile("csrr %0, pmpaddr1"  : "=r"(addr[1]));
+//   asm volatile("csrr %0, pmpaddr2"  : "=r"(addr[2]));
+//   asm volatile("csrr %0, pmpaddr3"  : "=r"(addr[3]));
+//   asm volatile("csrr %0, pmpaddr4"  : "=r"(addr[4]));
+//   asm volatile("csrr %0, pmpaddr5"  : "=r"(addr[5]));
+//   asm volatile("csrr %0, pmpaddr6"  : "=r"(addr[6]));
+//   asm volatile("csrr %0, pmpaddr7"  : "=r"(addr[7]));
+//   asm volatile("csrr %0, pmpaddr8"  : "=r"(addr[8]));
+//   asm volatile("csrr %0, pmpaddr9"  : "=r"(addr[9]));
+//   asm volatile("csrr %0, pmpaddr10" : "=r"(addr[10]));
+//   asm volatile("csrr %0, pmpaddr11" : "=r"(addr[11]));
+//   asm volatile("csrr %0, pmpaddr12" : "=r"(addr[12]));
+//   asm volatile("csrr %0, pmpaddr13" : "=r"(addr[13]));
+//   asm volatile("csrr %0, pmpaddr14" : "=r"(addr[14]));
+//   asm volatile("csrr %0, pmpaddr15" : "=r"(addr[15]));
+
+//   sbi_printf(
+//       "\n[PMP-DUMP] event=%s hart=%lu "
+//       "pmpcfg0=0x%lx pmpcfg2=0x%lx\n",
+//       event,
+//       hartid,
+//       cfg0,
+//       cfg2);
+
+//   for (int i = 0; i < 16; i++) {
+//     sbi_printf("[PMP-DUMP] pmpaddr%d=0x%lx\n", i, addr[i]);
+//   }
+
+// }
+
 void pmp_init(void)
 {
+  // debug_dump_pmp("before enclave starts running");
+
   uintptr_t pmpaddr = 0;
   uintptr_t pmpcfg = 0;
   int i;
