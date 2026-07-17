@@ -9,6 +9,7 @@
 #include "sm-sbi-opensbi.h"
 #include "page.h"
 #include "ipi.h"
+#include <stdint.h>
 #include <sbi/sbi_hart.h>
 #include <sbi/riscv_asm.h>
 #include <sbi/riscv_locks.h>
@@ -17,6 +18,10 @@
 #ifndef TARGET_PLATFORM_HEADER
 #error "SM requires a defined platform to build"
 #endif
+
+// For running the experiment
+#define PMP_BENCH_SAMPLES 1000
+#define PMP_BENCH_WARMUP 100
 
 // Special target platform header, set by configure script
 #include TARGET_PLATFORM_HEADER
@@ -28,6 +33,13 @@ static spinlock_t pmp_lock = SPIN_LOCK_INITIALIZER;
 static struct pmp_region regions[PMP_MAX_N_REGION];
 static uint32_t reg_bitmap = 0;
 static uint32_t region_def_bitmap = 0;
+
+/* Storing data from the experiment */
+static uint64_t global_samples[PMP_BENCH_SAMPLES];
+// static uint64_t local_samples[PMP_BENCH_SAMPLES];
+// static unsigned int global_sample_index;
+// static unsigned int local_sample_index;
+// static int benchmark_done = 0;
 
 static inline int region_register_idx(region_id i)
 {
@@ -185,6 +197,16 @@ static int detect_region_overlap(uintptr_t addr, uintptr_t size)
   return region_overlap;
 }
 
+static inline uint64_t read_cycles(void) 
+{
+  uint64_t value; asm volatile( "rdcycle %0" : "=r"(value) ); return value; 
+}
+
+static inline uint64_t read_time_counter(void) { 
+  uint64_t value; asm volatile( "rdtime %0" : "=r"(value) ); 
+  return value;
+}
+
 int pmp_detect_region_overlap_atomic(uintptr_t addr, uintptr_t size)
 {
   int region_overlap = 0;
@@ -216,68 +238,19 @@ int pmp_set_global(int region_idx, uint8_t perm)
   if(!is_pmp_region_valid(region_idx))
     PMP_ERROR(SBI_ERR_SM_PMP_REGION_INVALID, "Invalid PMP region index");
 
+  // start = read_cycles();
+
   send_and_sync_pmp_ipi(region_idx, SBI_PMP_IPI_TYPE_SET, perm);
+
+  // end = read_cycles();
+  // sbi_printf( "[PMP-GLOBAL-EXPERIMENT] initiator=%lu region=%d perm=0x%x cycles=%lu ret=%d\n", csr_read(mhartid), n, perm, end - start, ret );
+  // if (global_sample_index < PMP_BENCH_SAMPLES) global_samples[global_sample_index++] = end - start;
 
   return SBI_ERR_SM_PMP_SUCCESS;
 }
 
-// static void debug_dump_pmp(const char *event)
-// {
-//   uintptr_t hartid;
-//   uintptr_t cfg0;
-//   uintptr_t cfg2;
-//   uintptr_t addr[16];
-
-//   asm volatile("csrr %0, mhartid" : "=r"(hartid));
-//   asm volatile("csrr %0, pmpcfg0" : "=r"(cfg0));
-//   asm volatile("csrr %0, pmpcfg2" : "=r"(cfg2));
-
-//   // changing the CSR value a little
-//   // uintptr_t pmpaddr0 = 0x1111;
-//   // uintptr_t pmpaddr1 = 0x2222;
-//   // uintptr_t pmpaddr2 = 0x3333;
-//   // uintptr_t pmpcfg0  = 0x001F181B;
-
-//   // asm volatile("csrw pmpaddr0, %0" :: "r"(pmpaddr0)); 
-//   // asm volatile("csrw pmpaddr1, %0" :: "r"(pmpaddr1)); 
-//   // asm volatile("csrw pmpaddr2, %0" :: "r"(pmpaddr2)); 
-//   // asm volatile("csrw pmpcfg0, %0" :: "r"(pmpcfg0)); 
-
-//   asm volatile("csrr %0, pmpaddr0"  : "=r"(addr[0]));
-//   asm volatile("csrr %0, pmpaddr1"  : "=r"(addr[1]));
-//   asm volatile("csrr %0, pmpaddr2"  : "=r"(addr[2]));
-//   asm volatile("csrr %0, pmpaddr3"  : "=r"(addr[3]));
-//   asm volatile("csrr %0, pmpaddr4"  : "=r"(addr[4]));
-//   asm volatile("csrr %0, pmpaddr5"  : "=r"(addr[5]));
-//   asm volatile("csrr %0, pmpaddr6"  : "=r"(addr[6]));
-//   asm volatile("csrr %0, pmpaddr7"  : "=r"(addr[7]));
-//   asm volatile("csrr %0, pmpaddr8"  : "=r"(addr[8]));
-//   asm volatile("csrr %0, pmpaddr9"  : "=r"(addr[9]));
-//   asm volatile("csrr %0, pmpaddr10" : "=r"(addr[10]));
-//   asm volatile("csrr %0, pmpaddr11" : "=r"(addr[11]));
-//   asm volatile("csrr %0, pmpaddr12" : "=r"(addr[12]));
-//   asm volatile("csrr %0, pmpaddr13" : "=r"(addr[13]));
-//   asm volatile("csrr %0, pmpaddr14" : "=r"(addr[14]));
-//   asm volatile("csrr %0, pmpaddr15" : "=r"(addr[15]));
-
-//   sbi_printf(
-//       "\n[PMP-DUMP] event=%s hart=%lu "
-//       "pmpcfg0=0x%lx pmpcfg2=0x%lx\n",
-//       event,
-//       hartid,
-//       cfg0,
-//       cfg2);
-
-//   for (int i = 0; i < 16; i++) {
-//     sbi_printf("[PMP-DUMP] pmpaddr%d=0x%lx\n", i, addr[i]);
-//   }
-
-// }
-
 void pmp_init(void)
 {
-  // debug_dump_pmp("before enclave starts running");
-
   uintptr_t pmpaddr = 0;
   uintptr_t pmpcfg = 0;
   int i;
@@ -293,6 +266,8 @@ void pmp_init(void)
 
 int pmp_set_keystone(int region_idx, uint8_t perm)
 {
+  // start = read_cycles();
+
   if(!is_pmp_region_valid(region_idx))
     PMP_ERROR(SBI_ERR_SM_PMP_REGION_INVALID, "Invalid PMP region index");
 
@@ -332,6 +307,12 @@ int pmp_set_keystone(int region_idx, uint8_t perm)
       sm_assert(false);
     }
   }
+
+
+  // end = read_cycles();
+  // sbi_printf( "[PMP-LOCAL-EXPERIMENT] hart=%lu region=%d perm=0x%x cycles=%lu\n", csr_read(mhartid), n, perm, end - start );
+  // if (local_sample_index < PMP_BENCH_SAMPLES) local_samples[local_sample_index++] = end - start;
+
   return SBI_ERR_SM_PMP_SUCCESS;
 }
 
@@ -551,5 +532,54 @@ uint64_t pmp_region_get_size(region_id i)
 {
   if(is_pmp_region_valid(i))
     return region_get_size(i);
+  return 0;
+}
+
+uint64_t pmp_benchmark_global(int region_idx, uint8_t perm)
+{
+
+  uint64_t start; 
+  uint64_t end; 
+  uint64_t total = 0; 
+  uint64_t minimum = UINT64_MAX; 
+  uint64_t maximum = 0;
+
+  /* * Warm-up operations are not recorded. */ 
+  for (int i = 0; i < PMP_BENCH_WARMUP; i++) 
+  { 
+    send_and_sync_pmp_ipi( region_idx, SBI_PMP_IPI_TYPE_SET, perm);
+  }
+
+  /* * Timed measurements. *
+   * Do not print anything inside this loop because * 
+   sbi_printf() would significantly distort the results. */
+  for (int i = 0; i < PMP_BENCH_SAMPLES; i++) 
+  { 
+    start = read_cycles(); 
+    send_and_sync_pmp_ipi( region_idx, SBI_PMP_IPI_TYPE_SET, perm); 
+    end = read_cycles(); 
+    global_samples[i] = end - start;
+  }
+
+  /* * Process the samples only after all timed operations 
+  * have completed. */ 
+  for (int i = 0; i < PMP_BENCH_SAMPLES; i++) 
+  { 
+    uint64_t cycles = global_samples[i]; 
+    total += cycles; 
+    if (cycles < minimum) minimum = cycles; 
+    if (cycles > maximum) maximum = cycles; 
+  }
+
+  sbi_printf( 
+    "[PMP-BENCH] hart=%u region=%d samples=%d " "avg=%lu min=%lu max=%lu cycles\n", 
+    current_hartid(),
+    region_idx, 
+    PMP_BENCH_SAMPLES, 
+    total / PMP_BENCH_SAMPLES, 
+    minimum, 
+    maximum
+  );
+
   return 0;
 }

@@ -25,6 +25,9 @@ extern void save_host_regs(void);
 extern void restore_host_regs(void);
 extern byte dev_public_key[PUBLIC_KEY_SIZE];
 
+/* For experiments */
+static int benchmark_done = 0;
+
 /****************************
  *
  * Enclave utility functions
@@ -378,12 +381,20 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create_t
     goto free_region;
 
   // set pmp registers for private region (not shared)
-  if(pmp_set_global(region, PMP_NO_PERM))
+
+  ret = pmp_set_global(region, PMP_NO_PERM);
+
+  if (ret != SBI_ERR_SM_PMP_SUCCESS) 
     goto free_shared_region;
+
+  if(!benchmark_done)
+  {
+    benchmark_done = 1;
+    pmp_benchmark_global(region, PMP_NO_PERM);
+  }
 
   // cleanup some memory regions for sanity See issue #38
   clean_enclave_memory(utbase, utsize);
-
 
   // initialize enclave metadata
   enclaves[eid].eid = eid;
